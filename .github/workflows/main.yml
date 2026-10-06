@@ -120,14 +120,14 @@ jobs:
           const DB = (process.env.FIREBASE_DB_URL || "").trim().replace(/\/+$/, "");
           if (!DB) { console.log("::error::GitHub secret ZEDGE1_DB_URL is missing - set it in GitHub > Settings > Secrets and variables > Actions"); process.exit(1); }
           const ACCOUNT = "ZEDGE1";
-          const DEFAULT_WINDOWS = [10, 15, 20];   // window start hours (Asia/Dhaka) - fallback only
+          const DEFAULT_WINDOWS = [10, 15, 20];   // window start hours (Asia/Riyadh) - fallback only
           const WINDOW_HOURS = 3;                      // each window lasts 3 hours
           const SLOT_MIN = 30;                         // scheduler pings every 30 min
           const RUN_ID = process.env.GITHUB_RUN_ID || "";
           const OUT = process.env.GITHUB_OUTPUT || "";
           const setOutput = (k, v) => { try { if (OUT) fs.appendFileSync(OUT, `${k}=${v}\n`); } catch (_) {} };
 
-          const dhaka = new Date(Date.now() + 6 * 3600 * 1000);   // UTC+6
+          const dhaka = new Date(Date.now() + 3 * 3600 * 1000);   // UTC+3
           const h = dhaka.getUTCHours(), m = dhaka.getUTCMinutes();
           const dateKey = dhaka.toISOString().slice(0, 10);
           const pad2 = (n) => String(n).padStart(2, "0");
@@ -233,7 +233,7 @@ jobs:
           //  (1) an exact slot is "active" one ping BEFORE its minute, so the early ping sleeps instead of falling
           //      through to "outside" (that bug made every exact upload run on the NEXT ping = 10-30 min late);
           //  (2) exact slots release EXACT_LEAD_MIN minutes early so checkout/Playwright/login/generation finish first,
-          //      and bot.js holds the Publish click until HH:MM Dhaka sharp (EXACT_TARGET_DHAKA env).
+          //      and bot.js holds the Publish click until HH:MM Riyadh sharp (EXACT_TARGET_DHAKA env).
           const isActive = (s, i) => now >= Math.min(startOf(s), fireOf(s, i) - SLOT_MIN) && now < Math.max(endOf(s), targetOf(s, i)) + SLOT_MIN;
           let wIdx = slots.findIndex((s, i) => isActive(s, i) && !isBlocked(i));   // prefer an active slot that has not run (or whose run failed) yet
           if (wIdx < 0) wIdx = slots.findIndex(isActive);
@@ -271,7 +271,7 @@ jobs:
           const retries = runList.filter(i => markerOf(i) || i !== wIdx);
           const slotDesc = slots.map((s, i) => `S${i + 1} ${pad2(s.hour)}:${pad2(s.minute)}${s.exact ? " exact" : "-" + pad2(s.endHour) + ":" + pad2(s.endMinute) + " random"}`).join(", ");
           const stateDesc = slots.map((s, i) => `S${i + 1}=${slotState(i)}${attemptsOf(i) > 1 ? "x" + attemptsOf(i) : ""}`).join(" ");
-          console.log(`Date ${dateKey} ${hhmm} (Dhaka) | slots [${slotDesc}] (${source}) | slot ${wIdx}${wIdx >= 0 ? ` | target ${target} (${exact ? "exact" : "random in range"})` : ""} | decision: ${decision}${waitMin ? ` (sleeping ${waitMin} min until ${pad2(Math.floor(fireMin / 60)) + ":" + pad2(fireMin % 60)}${exact ? ", publish at " + target : ""})` : ""}`);
+          console.log(`Date ${dateKey} ${hhmm} (Riyadh) | slots [${slotDesc}] (${source}) | slot ${wIdx}${wIdx >= 0 ? ` | target ${target} (${exact ? "exact" : "random in range"})` : ""} | decision: ${decision}${waitMin ? ` (sleeping ${waitMin} min until ${pad2(Math.floor(fireMin / 60)) + ":" + pad2(fireMin % 60)}${exact ? ", publish at " + target : ""})` : ""}`);
           console.log(`Recovery: ${retryEnabled ? "on" : "off"} | uploads today ${uploadsDone}/${DAILY_LIMIT} | ${stateDesc}${missed.length ? ` | missed [${missed.map(i => "S" + (i + 1)).join(", ")}] -> ${plan}${laterSlot >= 0 && plan === "next-window" ? " (S" + (laterSlot + 1) + " " + hhmmOf(targetOf(slots[laterSlot], laterSlot)) + ")" : ""}` : ""}${runList.length ? ` | this run uploads slots [${runList.map(i => "S" + (i + 1)).join(", ")}]` : ""}`);
 
           // ---- v27.11: tell the user once per miss (panel / app / desktop via dashboardSettings/alerts + Telegram) ----
@@ -303,7 +303,7 @@ jobs:
             const text = `${name} was not uploaded at its scheduled time: ${why}. ${how}`;
             const textBn = `${name} নির্ধারিত সময়ে আপলোড হয়নি: ${why}. ${howBn}`;
             await pushAlert(`${dateKey}-s${i}-${key}`, kind, text, textBn, { slot: i, attempts: att, plan: mode, account: acc });
-            await tgSend([`${kind === "err" ? "🚨" : "⚠️"} <b>স্লট মিস - ${esc(name)}</b>`, "━━━━━━━━━━━━━━━━", `📁 প্রজেক্ট: ${esc(acc)}`, `📝 কারণ: <code>${esc(why)}</code>`, `🔁 পরবর্তী: ${esc(howBn)}`, `🕒 সময়: ${dateKey} ${hhmm} (Dhaka)`].join("\n"));
+            await tgSend([`${kind === "err" ? "🚨" : "⚠️"} <b>স্লট মিস - ${esc(name)}</b>`, "━━━━━━━━━━━━━━━━", `📁 প্রজেক্ট: ${esc(acc)}`, `📝 কারণ: <code>${esc(why)}</code>`, `🔁 পরবর্তী: ${esc(howBn)}`, `🕒 সময়: ${dateKey} ${hhmm} (Riyadh)`].join("\n"));
           };
           try {
             if (go && decision === "retry") await notifyMiss(wIdx, "in-window");
@@ -345,10 +345,10 @@ jobs:
               await jwrite("dashboardSettings/gate", "PATCH", { lastRun: Date.now() + waitMin * 60000, lastRunDhaka: `${dateKey} ${waitMin ? target : hhmm}`, lastRunWindow: wIdx, lastRunSlots: runList });
             } catch (e) { console.log("Run marker failed: " + e.message); }
             if (waitMin > 0) {
-              console.log(exact ? `Waiting ${waitMin} min - releasing ${EXACT_LEAD_MIN} min early so the Publish click lands at ${target} Dhaka sharp...` : `Waiting ${waitMin} min so the upload starts at ${target} Dhaka...`);
+              console.log(exact ? `Waiting ${waitMin} min - releasing ${EXACT_LEAD_MIN} min early so the Publish click lands at ${target} Riyadh sharp...` : `Waiting ${waitMin} min so the upload starts at ${target} Riyadh...`);
               await new Promise(r => setTimeout(r, waitMin * 60 * 1000));
             }
-            if (exact && decision !== "retry-late") setOutput("target", target);   // v26.2: bot.js holds Publish until this HH:MM (Dhaka)
+            if (exact && decision !== "retry-late") setOutput("target", target);   // v26.2: bot.js holds Publish until this HH:MM (Riyadh)
             setOutput("exact", "yes");   // v23.1: gate already picked the minute -> skip the extra random delay in both modes
             setOutput("slots", JSON.stringify(runList));
             setOutput("count", String(Math.max(1, runList.length)));
@@ -998,7 +998,7 @@ jobs:
             } catch (_) {}
           }
           const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-          const dhakaNow = () => new Date(Date.now() + 6 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 16) + " (Dhaka)";
+          const dhakaNow = () => new Date(Date.now() + 3 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 16) + " (Riyadh)";
 
           // ------------------------------------------------------------- main flows
           async function connectFlow(isTest) {
@@ -1155,7 +1155,7 @@ jobs:
           }
 
           // v26.2/v27.5 exact-time publish (bot.js scope): the gate releases a few minutes early; we hold right before the Publish click
-          // until HH:MM (Asia/Dhaka) sharp. Only the first publish of the run is held.
+          // until HH:MM (Asia/Riyadh) sharp. Only the first publish of the run is held.
           const EXACT_TARGET = (process.env.EXACT_TARGET_DHAKA || "").trim();
           let exactHoldUsed = false;
 
@@ -1167,7 +1167,7 @@ jobs:
           //   uploaded again in the same window, the next window, or as a late catch-up - never silently lost.
           const GATE_SLOTS = (() => { try { const a = JSON.parse(process.env.GATE_SLOTS || "[]"); return Array.isArray(a) ? a.map(Number).filter(Number.isInteger) : []; } catch (_) { return []; } })();
           const GATE_RETRY_SLOTS = (() => { try { const a = JSON.parse(process.env.GATE_RETRY_SLOTS || "[]"); return Array.isArray(a) ? a.map(Number).filter(Number.isInteger) : []; } catch (_) { return []; } })();
-          const GATE_DATE_KEY = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+          const GATE_DATE_KEY = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
           const gateSlotDone = new Set();
           const gateSlotFor = (uploadIdx) => GATE_SLOTS[uploadIdx] !== undefined ? GATE_SLOTS[uploadIdx] : GATE_SLOTS[0];
           async function markGateSlot(uploadIdx, patch) {
@@ -1198,11 +1198,11 @@ jobs:
             exactHoldUsed = true;
             const parts = EXACT_TARGET.split(":").map(Number);
             const goal = parts[0] * 60 + parts[1];
-            const dhakaNow = () => { const d = new Date(Date.now() + 6 * 3600 * 1000); return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60; };
+            const dhakaNow = () => { const d = new Date(Date.now() + 3 * 3600 * 1000); return d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60; };
             let diff = goal - dhakaNow();
-            if (diff <= 0) { console.log("EXACT_TIME => target " + EXACT_TARGET + " Dhaka passed " + Math.abs(diff).toFixed(1) + " min ago - " + stage + " now."); return; }
+            if (diff <= 0) { console.log("EXACT_TIME => target " + EXACT_TARGET + " Riyadh passed " + Math.abs(diff).toFixed(1) + " min ago - " + stage + " now."); return; }
             if (diff > 40) { console.log("EXACT_TIME => target " + EXACT_TARGET + " is " + diff.toFixed(0) + " min away (too far, ignoring hold)."); return; }
-            console.log("EXACT_TIME => holding " + diff.toFixed(1) + " min so " + stage + " lands at " + EXACT_TARGET + " Dhaka sharp.");
+            console.log("EXACT_TIME => holding " + diff.toFixed(1) + " min so " + stage + " lands at " + EXACT_TARGET + " Riyadh sharp.");
             while ((diff = goal - dhakaNow()) > 0) await new Promise(r => setTimeout(r, Math.min(15000, Math.max(250, diff * 60000))));
             console.log("EXACT_TIME => " + EXACT_TARGET + " reached - " + stage + " now.");
           }
@@ -1266,7 +1266,7 @@ jobs:
           }
           function fmtDhakaTime(d = new Date()) {
             try {
-              return d.toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).replace(",", " ·");
+              return d.toLocaleString("en-GB", { timeZone: "Asia/Riyadh", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).replace(",", " ·");
             } catch (_) { return d.toISOString(); }
           }
           function fmtDuration(ms) {
@@ -1398,15 +1398,15 @@ jobs:
 
           function getDhakaGreeting() {
             try {
-              const dhakaHour = parseInt(new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka", hour: "2-digit", hour12: false }), 10);
+              const dhakaHour = parseInt(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh", hour: "2-digit", hour12: false }), 10);
               let greetingTime = "শুভ দিন";
               if (dhakaHour >= 5 && dhakaHour < 12) greetingTime = "শুভ সকাল";
               else if (dhakaHour >= 12 && dhakaHour < 17) greetingTime = "শুভ দুপুর";
               else if (dhakaHour >= 17 && dhakaHour < 22) greetingTime = "শুভ সন্ধ্যা";
               else greetingTime = "শুভ রাত্রি";
-              return `হ্যালো মঞ্জুরুল ভাই, ${greetingTime}`;
+              return `হ্যালো শাওন ভাই, ${greetingTime}`;
             } catch (_) {
-              return "হ্যালো মঞ্জুরুল ভাই";
+              return "হ্যালো শাওন ভাই";
             }
           }
 
@@ -1426,8 +1426,8 @@ jobs:
           async function getProfileState(totalProfilesCount) {
             console.log("Checking profile rotation state...");
             
-            // Get current date in Dhaka timezone (e.g. "5/1/2026")
-            const today = new Date().toLocaleString("en-US", { timeZone: "Asia/Dhaka" }).split(",")[0];
+            // Get current date in Riyadh timezone (e.g. "5/1/2026")
+            const today = new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }).split(",")[0];
             
             let state;
             try {
@@ -1644,7 +1644,7 @@ jobs:
             const wantedType = dayType === "AUDIO" ? "RINGTONE" : dayType;
 
             // Pinned scheduling: items pinned to today's date (or overdue) take priority over the rotation
-            const todayKey = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+            const todayKey = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
             const pinnedEntries = allQueued
               .filter(([_, item]) => item.scheduledDate && item.scheduledDate <= todayKey)
               .sort((a, b) =>
@@ -1943,8 +1943,8 @@ jobs:
               }
             }
 
-            console.log("Using fallback timezone: Asia/Dhaka");
-            return "Asia/Dhaka";
+            console.log("Using fallback timezone: Asia/Riyadh");
+            return "Asia/Riyadh";
           }
 
           async function safeClick(locator, label, timeout = 30000) {
@@ -2881,7 +2881,7 @@ jobs:
                   let vTypes = Array.isArray(vRaw.types) ? vRaw.types.map(t => String(t || "").toUpperCase().replace(/^AUDIO$/, "RINGTONE")).filter(t => KNOWN_CT.includes(t)) : [];
                   vTypes = Array.from(new Set(vTypes));
                   if (vTypes.length < 2) vTypes = KNOWN_CT.slice();
-                  const dhakaDayNo = Math.floor((Date.now() + 6 * 3600 * 1000) / 86400000);
+                  const dhakaDayNo = Math.floor((Date.now() + 3 * 3600 * 1000) / 86400000);
                   const startAt = dhakaDayNo % vTypes.length;
                   const order = vTypes.map((_, i) => vTypes[(startAt + i) % vTypes.length]);
                   const vu = currentState.varietyUsed;
@@ -3839,9 +3839,6 @@ jobs:
         if: inputs.run_mode != 'vpn_test'
         shell: pwsh
         env:
-          # v28 security: database URL + R2 worker URL from GitHub Secrets
-          FIREBASE_DB_URL: ${{ secrets.ZEDGE1_DB_URL }}
-          R2_WORKER_URL: ${{ secrets.R2_WORKER_URL }}
           # v24: set by the VPN step (VPN_ACTIVE=1 when a tunnel is up)
           VPN_ACTIVE: ${{ env.VPN_ACTIVE }}
           VPN_TYPE: ${{ env.VPN_TYPE }}
@@ -3854,6 +3851,9 @@ jobs:
           # v28: login from the dispatch inputs, or (safer) from the GitHub secrets ZEDGE1_EMAIL / ZEDGE1_PASSWORD
           ZEDGE_EMAIL: ${{ github.event.inputs.zedge_email || secrets.ZEDGE1_EMAIL }}
           ZEDGE_PASSWORD: ${{ github.event.inputs.zedge_password || secrets.ZEDGE1_PASSWORD }}
+          # v28 security: from GitHub Secrets (needed by bot.js)
+          FIREBASE_DB_URL: ${{ secrets.ZEDGE1_DB_URL }}
+          R2_WORKER_URL: ${{ secrets.R2_WORKER_URL }}
           HEADLESS: ${{ github.event.inputs.headless }}
           TOTAL_PROFILES: ${{ github.event.inputs.total_profiles }}
           UA_GROUP: ${{ github.event.inputs.ua_group }}
@@ -3884,7 +3884,7 @@ jobs:
           @'
           const DB = process.env.FIREBASE_DB_URL;
           let slots = []; try { slots = JSON.parse(process.env.GATE_SLOTS || "[]"); } catch (_) {}
-          const dateKey = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+          const dateKey = new Date(Date.now() + 3 * 3600 * 1000).toISOString().slice(0, 10);
           (async () => {
             for (const s of slots) {
               try {
